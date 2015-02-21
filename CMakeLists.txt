@@ -68,11 +68,21 @@ else()
     set(SFML_BUILD_EXAMPLES FALSE)
 endif()
 
+# add options to select which modules to build
+sfml_set_option(SFML_BUILD_WINDOW TRUE BOOL "TRUE to build SFML's Window module. This setting is ignored, if the graphics module is built.")
+sfml_set_option(SFML_BUILD_GRAPHICS TRUE BOOL "TRUE to build SFML's Graphics module.")
+if(NOT SFML_OS_IOS)
+    sfml_set_option(SFML_BUILD_AUDIO TRUE BOOL "TRUE to build SFML's Audio module.")
+endif()
+sfml_set_option(SFML_BUILD_NETWORK TRUE BOOL "TRUE to build SFML's Network module.")
+
 # add an option for building the API documentation
 sfml_set_option(SFML_BUILD_DOC FALSE BOOL "TRUE to generate the API documentation, FALSE to ignore it")
 
 # add an option for choosing the OpenGL implementation
-sfml_set_option(SFML_OPENGL_ES ${OPENGL_ES} BOOL "TRUE to use an OpenGL ES implementation, FALSE to use a desktop OpenGL implementation")
+if(SFML_BUILD_WINDOW)
+    sfml_set_option(SFML_OPENGL_ES ${OPENGL_ES} BOOL "TRUE to use an OpenGL ES implementation, FALSE to use a desktop OpenGL implementation")
+endif()
 
 # Mac OS X specific options
 if(SFML_OS_MACOSX)
@@ -128,6 +138,12 @@ endif()
 # define SFML_STATIC if the build type is not set to 'shared'
 if(NOT BUILD_SHARED_LIBS)
     add_definitions(-DSFML_STATIC)
+endif()
+
+# force building sfml-window, if sfml-graphics module is built
+if(SFML_BUILD_GRAPHICS AND NOT SFML_BUILD_WINDOW)
+    message(WARNING "You're trying to build SFML's Graphics module without the Window module. Forcing building of the Window module as a dependency.")
+    set(SFML_BUILD_WINDOW TRUE)
 endif()
 
 # Visual C++: remove warnings regarding SL security and algorithms on pointers
@@ -193,11 +209,11 @@ if(SFML_OS_MACOSX)
     endif()
 
     # only the default architecture (i.e. 64-bit) is supported
-    if(CMAKE_OSX_ARCHITECTURES AND NOT "${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64")
+    if(CMAKE_OSX_ARCHITECTURES AND NOT CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
         message(FATAL_ERROR "Only 64-bit architecture is supported")
         return()
     endif()
-        
+
     # configure Xcode templates
     set(XCODE_TEMPLATES_ARCH "\$(NATIVE_ARCH_ACTUAL)")
 endif()
@@ -279,10 +295,46 @@ else()
                           MACOSX_FRAMEWORK_BUNDLE_VERSION ${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}
                           PUBLIC_HEADER "${SFML_HEADERS}")
 
-    # add the remaining headers
-    add_custom_command(TARGET SFML
-                       POST_BUILD
-                       COMMAND cp -r ${PROJECT_SOURCE_DIR}/include/SFML/* $<TARGET_FILE_DIR:SFML>/Headers)
+    # add the non-optional SFML headers
+    add_custom_command(TARGET SFML POST_BUILD COMMAND cp -r
+                       ${PROJECT_SOURCE_DIR}/include/SFML/Config.hpp
+                       ${PROJECT_SOURCE_DIR}/include/SFML/OpenGL.hpp
+                       ${PROJECT_SOURCE_DIR}/include/SFML/System.hpp
+                       ${PROJECT_SOURCE_DIR}/include/SFML/Main.hpp
+                       ${PROJECT_SOURCE_DIR}/include/SFML/System
+                       $<TARGET_FILE_DIR:SFML>/Headers)
+
+    # add window module headers if enabled
+    if(SFML_BUILD_WINDOW)
+        add_custom_command(TARGET SFML POST_BUILD COMMAND cp -r
+                           ${PROJECT_SOURCE_DIR}/include/SFML/Window.hpp
+                           ${PROJECT_SOURCE_DIR}/include/SFML/Window
+                           $<TARGET_FILE_DIR:SFML>/Headers)
+    endif()
+
+    # add network module headers if enabled
+    if(SFML_BUILD_GRAPHICS)
+        add_custom_command(TARGET SFML POST_BUILD COMMAND cp -r
+                           ${PROJECT_SOURCE_DIR}/include/SFML/Network.hpp
+                           ${PROJECT_SOURCE_DIR}/include/SFML/Network
+                           $<TARGET_FILE_DIR:SFML>/Headers)
+    endif()
+
+     # add graphics module headers if enabled
+    if(SFML_BUILD_GRAPHICS)
+        add_custom_command(TARGET SFML POST_BUILD COMMAND cp -r
+                           ${PROJECT_SOURCE_DIR}/include/SFML/Graphics.hpp
+                           ${PROJECT_SOURCE_DIR}/include/SFML/Graphics
+                           $<TARGET_FILE_DIR:SFML>/Headers)
+    endif()
+
+     # add audio module headers if enabled
+    if(SFML_BUILD_AUDIO)
+        add_custom_command(TARGET SFML POST_BUILD COMMAND cp -r
+                           ${PROJECT_SOURCE_DIR}/include/SFML/Audio.hpp
+                           ${PROJECT_SOURCE_DIR}/include/SFML/Audio
+                           $<TARGET_FILE_DIR:SFML>/Headers)
+    endif()
 
     # adapt install directory to allow distributing dylibs/frameworks in user's frameworks/application bundle
     # NOTE: it's not required to link against SFML.framework
@@ -329,32 +381,36 @@ if(SFML_OS_WINDOWS)
 elseif(SFML_OS_MACOSX)
 
     # install extlibs dependencies only when used
-    if("${FLAC_LIBRARY}" STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/FLAC.framework")
-        install(DIRECTORY extlibs/libs-osx/Frameworks/FLAC.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
+    if(SFML_BUILD_GRAPHICS)
+        if(FREETYPE_LIBRARY STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/freetype.framework")
+            install(DIRECTORY extlibs/libs-osx/Frameworks/freetype.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
+        endif()
     endif()
 
-    if("${FREETYPE_LIBRARY}" STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/freetype.framework")
-        install(DIRECTORY extlibs/libs-osx/Frameworks/freetype.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
-    endif()
+    if(SFML_BUILD_AUDIO)
+        if(FLAC_LIBRARY STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/FLAC.framework")
+            install(DIRECTORY extlibs/libs-osx/Frameworks/FLAC.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
+        endif()
 
-    if("${OGG_LIBRARY}" STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/ogg.framework")
-        install(DIRECTORY extlibs/libs-osx/Frameworks/ogg.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
-    endif()
+        if(OGG_LIBRARY STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/ogg.framework")
+            install(DIRECTORY extlibs/libs-osx/Frameworks/ogg.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
+        endif()
 
-    if("${VORBIS_LIBRARY}" STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/vorbis.framework")
-        install(DIRECTORY extlibs/libs-osx/Frameworks/vorbis.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
-    endif()
+        if(VORBIS_LIBRARY STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/vorbis.framework")
+            install(DIRECTORY extlibs/libs-osx/Frameworks/vorbis.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
+        endif()
 
-    if("${VORBISENC_LIBRARY}" STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/vorbisenc.framework")
-        install(DIRECTORY extlibs/libs-osx/Frameworks/vorbisenc.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
-    endif()
+        if(VORBISENC_LIBRARY STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/vorbisenc.framework")
+            install(DIRECTORY extlibs/libs-osx/Frameworks/vorbisenc.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
+        endif()
 
-    if("${VORBISFILE_LIBRARY}" STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/vorbisfile.framework")
-        install(DIRECTORY extlibs/libs-osx/Frameworks/vorbisfile.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
-    endif()
+        if(VORBISFILE_LIBRARY STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/vorbisfile.framework")
+            install(DIRECTORY extlibs/libs-osx/Frameworks/vorbisfile.framework DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
+        endif()
 
-    if("${OPENAL_LIBRARY}" STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/OpenAL.framework")
-        install(DIRECTORY "${OPENAL_LIBRARY}" DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
+        if(OPENAL_LIBRARY STREQUAL "${SFML_SOURCE_DIR}/extlibs/libs-osx/Frameworks/OpenAL.framework")
+            install(DIRECTORY "${OPENAL_LIBRARY}" DESTINATION ${CMAKE_INSTALL_FRAMEWORK_PREFIX})
+        endif()
     endif()
 
     # install the Xcode templates if requested
@@ -381,7 +437,9 @@ elseif(SFML_OS_IOS)
 
     # since the iOS libraries are built as static, we must install the SFML dependencies
     # too so that the end user can easily link them to its final application
-    install(FILES extlibs/libs-ios/libfreetype.a extlibs/libs-ios/libjpeg.a DESTINATION lib)
+    if(SFML_BUILD_GRAPHICS)
+        install(FILES extlibs/libs-ios/libfreetype.a extlibs/libs-ios/libjpeg.a DESTINATION lib)
+    endif()
 
 elseif(SFML_OS_ANDROID)
 
