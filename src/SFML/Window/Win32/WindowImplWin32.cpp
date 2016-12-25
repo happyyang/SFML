@@ -116,6 +116,9 @@ namespace
         {
             if (touchIDs[i] == id)
                 return i;
+        }
+        for (int i = 0; i < 10; ++i)
+        {
             if (touchIDs[i] == -1)
             {
                 touchIDs[i] = id;
@@ -1069,9 +1072,11 @@ void WindowImplWin32::processEvent(UINT message, WPARAM wParam, LPARAM lParam)
                         event.touch.finger = index;
                         point.x = TOUCH_COORD_TO_PIXEL(events[i].x);
                         point.y = TOUCH_COORD_TO_PIXEL(events[i].y);
-                        ScreenToClient(m_handle, &point);
-                        event.touch.x = point.x;
-                        event.touch.y = point.y;
+
+                        POINT cpoint = point;
+                        ScreenToClient(m_handle, &cpoint);
+                        event.touch.x = cpoint.x;
+                        event.touch.y = cpoint.y;
 
                         if (events[i].dwFlags & TOUCHEVENTF_DOWN) {
                             event.type = Event::TouchBegan;
@@ -1079,7 +1084,6 @@ void WindowImplWin32::processEvent(UINT message, WPARAM wParam, LPARAM lParam)
 
                             // Prevent initial move event
                             touches[index] = point;
-                            err() << "down: " << events[i].dwID << ", x: " << point.x << ", y: " << point.y << std::endl;
                         }
                         if (events[i].dwFlags & TOUCHEVENTF_UP) {
                             event.type = Event::TouchEnded;
@@ -1087,7 +1091,6 @@ void WindowImplWin32::processEvent(UINT message, WPARAM wParam, LPARAM lParam)
 
                             // Remove the stored ID
                             touchIDs[index] = -1;
-                            err() << "up: " << events[i].dwID << ", x: " << point.x << ", y: " << point.y << std::endl;
                         }
                         if (events[i].dwFlags & TOUCHEVENTF_MOVE) {
                             // Only handle real movement
@@ -1096,7 +1099,6 @@ void WindowImplWin32::processEvent(UINT message, WPARAM wParam, LPARAM lParam)
                                 touches[index] = point;
                                 event.type = Event::TouchMoved;
                                 pushEvent(event);
-                                err() << "moved: " << events[i].dwID << ", x: " << point.x << ", y: " << point.y << std::endl;
                             }
                         }
 
@@ -1303,6 +1305,18 @@ void WindowImplWin32::prepareTouch()
 
     if (touchEnabled)
         RegisterTouchWindow(m_handle, 0);
+}
+
+////////////////////////////////////////////////////////////
+bool WindowImplWin32::isTouchDown(unsigned int finger)
+{
+    return touchIDs[finger] != -1;
+}
+
+////////////////////////////////////////////////////////////
+Vector2i WindowImplWin32::getTouchPosition(unsigned int finger)
+{
+    return Vector2i(touches[finger].x, touches[finger].y);
 }
 
 } // namespace priv
